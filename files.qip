@@ -1,8 +1,8 @@
-set_global_assignment -name SDC_FILE NextSpace.sdc
-set_global_assignment -name SYSTEMVERILOG_FILE NextSpace.sv
-set_global_assignment -name QIP_FILE rtl/t80/T80.qip
-set_global_assignment -name QIP_FILE rtl/fx68k/fx68k.qip
-set_global_assignment -name QIP_FILE rtl/jtopl/jt26.qip
+set_global_assignment -name SDC_FILE Arcade-NextSpace.sdc
+set_global_assignment -name SYSTEMVERILOG_FILE Arcade-NextSpace.sv
+set_global_assignment -name QIP_FILE rtl/modules/T80/T80.qip
+set_global_assignment -name QIP_FILE rtl/modules/fx68k/fx68k.qip
+set_global_assignment -name QIP_FILE rtl/modules/jtopl/target/quartus/jt26.qip
 set_global_assignment -name VERILOG_FILE rtl/video_timing.v
 set_global_assignment -name QIP_FILE sys/pll_q17.qip
 set_global_assignment -name QIP_FILE sys/pll_hdmi.qip
@@ -20,7 +20,6 @@ set_global_assignment -name VHDL_FILE rtl/mem/segment.vhd
 set_global_assignment -name VHDL_FILE rtl/mem/download_buffer.vhd
 set_global_assignment -name VHDL_FILE rtl/mem/sdram.vhd
 set_global_assignment -name VHDL_FILE rtl/mem/dual_port_ram.vhd
-
 
 
 

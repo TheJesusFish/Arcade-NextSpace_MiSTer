@@ -65,62 +65,83 @@ begin
 end
 endfunction
    
-localparam NEXTSPACE   = 0;
-localparam PADDLEMANIA = 1;
+localparam [3:0] NEXTSPACE   = 4'd0;
+localparam [3:0] PADDLEMANIA = 4'd1;
 
 always @ (*) begin
+    m68k_rom_cs      = 1'b0;
+    m68k_ram_cs      = 1'b0;
+    m68k_spr_cs      = 1'b0;
+
+    m68k_p1_cs       = 1'b0;
+    m68k_p2_cs       = 1'b0;
+    m68k_coin_cs     = 1'b0;
+    m68k_dsw1_cs     = 1'b0;
+    m68k_dsw2_cs     = 1'b0;
+    m68k_flip_cs     = 1'b0;
+
+    m68k_sound_cs    = 1'b0;
+    m68k_latch_cs    = 1'b0;
+
+    z80_rom_cs       = 1'b0;
+    z80_ram_cs       = 1'b0;
+    z80_ram2_cs      = 1'b0;
+    z80_latch_cs     = 1'b0;
+    z80_opl_addr_cs  = 1'b0;
+    z80_opl_data_cs  = 1'b0;
+
     // Memory mapping based on PCB type
     case (pcb)
         NEXTSPACE: begin
-            m68k_rom_cs      <= m68k_cs( 24'h000000, 24'h03ffff ) ;
-            m68k_ram_cs      <= m68k_cs( 24'h070000, 24'h073fff ) ;
-            m68k_spr_cs      <= m68k_cs( 24'h0a0000, 24'h0a3fff ) ;
-            
-            m68k_p1_cs      <= m68k_cs( 24'h0e0000, 24'h0e0001 ) & m68k_rw ;
-            m68k_p2_cs      <= m68k_cs( 24'h0e0002, 24'h0e0003 ) & m68k_rw ;
-            m68k_coin_cs    <= m68k_cs( 24'h0e0004, 24'h0e0005 ) & m68k_rw ;
-            
-            m68k_dsw1_cs     <= m68k_cs( 24'h0e0008, 24'h0e0009 ) ;
-            m68k_dsw2_cs     <= m68k_cs( 24'h0e000a, 24'h0e000b ) ;
-            
-            m68k_sound_cs    <= m68k_cs( 24'h0e0018, 24'h0e0019 ) & m68k_rw ;
-            
-            m68k_flip_cs     <= m68k_cs( 24'h0f0000, 24'h0f0001 ) & !m68k_rw ;
-            m68k_latch_cs    <= m68k_cs( 24'h0f0008, 24'h0f0009 ) & !m68k_rw ;            
-            
-            z80_rom_cs        <= ( MREQ_n == 0 && z80_addr[15:0] <  16'hf000 );
-            z80_ram_cs        <= ( MREQ_n == 0 && z80_addr[15:0] >= 16'hf000 && z80_addr[15:0] < 16'hf800 );
-            z80_ram2_cs       <= 0;
+            m68k_rom_cs      = m68k_cs( 24'h000000, 24'h03ffff ) ;
+            m68k_ram_cs      = m68k_cs( 24'h070000, 24'h073fff ) ;
+            m68k_spr_cs      = m68k_cs( 24'h0a0000, 24'h0a3fff ) ;
+	        
+            m68k_p1_cs       = m68k_cs( 24'h0e0000, 24'h0e0001 ) & m68k_rw ;
+            m68k_p2_cs       = m68k_cs( 24'h0e0002, 24'h0e0003 ) & m68k_rw ;
+            m68k_coin_cs     = m68k_cs( 24'h0e0004, 24'h0e0005 ) & m68k_rw ;
+	        
+            m68k_dsw1_cs     = m68k_cs( 24'h0e0008, 24'h0e0009 ) ;
+            m68k_dsw2_cs     = m68k_cs( 24'h0e000a, 24'h0e000b ) ;
+	        
+            m68k_sound_cs    = m68k_cs( 24'h0e0018, 24'h0e0019 ) & m68k_rw ;
+	        
+            m68k_flip_cs     = m68k_cs( 24'h0f0000, 24'h0f0001 ) & !m68k_rw ;
+            m68k_latch_cs    = m68k_cs( 24'h0f0008, 24'h0f0009 ) & !m68k_rw ;
+	        
+            z80_rom_cs       = ( MREQ_n == 0 && z80_addr[15:0] <  16'hf000 );
+            z80_ram_cs       = ( MREQ_n == 0 && z80_addr[15:0] >= 16'hf000 && z80_addr[15:0] < 16'hf800 );
+            z80_ram2_cs      = 1'b0;
 
-            z80_latch_cs      <= ( MREQ_n == 0 && z80_addr[15:0] == 16'hf800 );
-            z80_opl_addr_cs   <= ( z80_addr[7:0] == 8'h00 ) && ( !IORQ_n ) ; 
-            z80_opl_data_cs   <= ( z80_addr[7:0] == 8'h20 ) && ( !IORQ_n ) && (!WR_n); 
+            z80_latch_cs     = ( MREQ_n == 0 && z80_addr[15:0] == 16'hf800 );
+            z80_opl_addr_cs  = ( z80_addr[7:0] == 8'h00 ) && ( !IORQ_n ) ;
+            z80_opl_data_cs  = ( z80_addr[7:0] == 8'h20 ) && ( !IORQ_n ) && (!WR_n);
         end
-        
+	    
         PADDLEMANIA: begin
-            m68k_rom_cs      <= m68k_cs( 24'h000000, 24'h03ffff ) ;
-            m68k_ram_cs      <= m68k_cs( 24'h080000, 24'h083fff ) ;
-            m68k_spr_cs      <= m68k_cs( 24'h100000, 24'h103fff ) ;
+            m68k_rom_cs      = m68k_cs( 24'h000000, 24'h03ffff ) ;
+            m68k_ram_cs      = m68k_cs( 24'h080000, 24'h083fff ) ;
+            m68k_spr_cs      = m68k_cs( 24'h100000, 24'h103fff ) ;
 
-            m68k_dsw1_cs     <= m68k_cs( 24'h180000, 24'h180001 ) ;
-            m68k_dsw2_cs     <= m68k_cs( 24'h180008, 24'h180009 ) ;
-            
-            m68k_p1_cs      <= m68k_cs( 24'h300000, 24'h300001 ) & m68k_rw ;
-            m68k_p2_cs      <= m68k_cs( 24'h380000, 24'h380001 ) & m68k_rw ;
-            m68k_coin_cs    <= m68k_cs( 24'h340000, 24'h340001 ) & m68k_rw ;
-            
-            m68k_latch_cs    <= m68k_cs( 24'h380000, 24'h380001 ) & !m68k_rw ;
+            m68k_dsw1_cs     = m68k_cs( 24'h180000, 24'h180001 ) ;
+            m68k_dsw2_cs     = m68k_cs( 24'h180008, 24'h180009 ) ;
+	        
+            m68k_p1_cs       = m68k_cs( 24'h300000, 24'h300001 ) & m68k_rw ;
+            m68k_p2_cs       = m68k_cs( 24'h380000, 24'h380001 ) & m68k_rw ;
+            m68k_coin_cs     = m68k_cs( 24'h340000, 24'h340001 ) & m68k_rw ;
+	        
+            m68k_latch_cs    = m68k_cs( 24'h380000, 24'h380001 ) & !m68k_rw ;
 
-            m68k_sound_cs    <= 0 ;
-            m68k_flip_cs     <= 0 ;
-            
-            z80_rom_cs        <= ( MREQ_n == 0 && z80_addr[15:0] <  16'ha000 );
-            z80_ram_cs        <= ( MREQ_n == 0 && z80_addr[15:0] >= 16'hf000 && z80_addr[15:0] < 16'hf800 );
-            z80_ram2_cs       <= ( MREQ_n == 0 && z80_addr[15:0] >= 16'hfc00 );
+            m68k_sound_cs    = 1'b0 ;
+            m68k_flip_cs     = 1'b0 ;
+	        
+            z80_rom_cs       = ( MREQ_n == 0 && z80_addr[15:0] <  16'ha000 );
+            z80_ram_cs       = ( MREQ_n == 0 && z80_addr[15:0] >= 16'hf000 && z80_addr[15:0] < 16'hf800 );
+            z80_ram2_cs      = ( MREQ_n == 0 && z80_addr[15:0] >= 16'hfc00 );
 
-            z80_latch_cs      <= ( MREQ_n == 0 && z80_addr[15:0] == 16'he000 ); 
-            z80_opl_addr_cs   <= ( MREQ_n == 0 && z80_addr[15:0] == 16'he800 ); 
-            z80_opl_data_cs   <= ( MREQ_n == 0 && z80_addr[15:0] == 16'hec00 ) && (!WR_n); 
+            z80_latch_cs     = ( MREQ_n == 0 && z80_addr[15:0] == 16'he000 );
+            z80_opl_addr_cs  = ( MREQ_n == 0 && z80_addr[15:0] == 16'he800 );
+            z80_opl_data_cs  = ( MREQ_n == 0 && z80_addr[15:0] == 16'hec00 ) && (!WR_n);
         end
     endcase
 
