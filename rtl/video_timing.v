@@ -26,16 +26,23 @@ module video_timing
 wire [8:0] h_ofs = 0;
 wire [8:0] HBL_START  = 255 ;
 wire [8:0] HBL_END    = 383 ;
-wire [8:0] HS_START   = HBL_START + 41 + $signed(hs_offset);
-wire [8:0] HS_END     = HBL_START + 73 + $signed(hs_offset) + $signed(hs_width);
+// OSD offsets and widths are signed (-8..7)
+wire [8:0] hs_off_x   = { {5{hs_offset[3]}}, hs_offset };
+wire [8:0] hs_wid_x   = { {5{hs_width[3]}},  hs_width };
+wire [8:0] vs_off_x   = { {5{vs_offset[3]}}, vs_offset };
+wire [3:0] vs_len     = ( vs_width == 4'b1000 ) ? 4'd1 : 4'd8 + vs_width;
+wire [8:0] HS_START   = HBL_START + 9'd41 + hs_off_x;
+wire [8:0] HS_END     = HBL_START + 9'd73 + hs_off_x + hs_wid_x;
 wire [8:0] HTOTAL     = 383;
 
 wire [8:0] v_ofs = 0;
 wire [8:0] VBL_START  = 240 ;
 wire [8:0] VBL_END    = 16 ;
-wire [8:0] VS_START   = VBL_START + 13 + $signed(vs_offset);
-wire [8:0] VS_END     = VBL_START + 21 + $signed(vs_offset) + $signed(vs_width);
+wire [8:0] VS_START   = VBL_START + 9'd13 + vs_off_x;
+wire [8:0] vs_end_raw = VS_START + vs_len;
 wire [8:0] VTOTAL     = 263 ;
+// V-sync end wrapped into the frame
+wire [8:0] VS_END     = ( vs_end_raw > VTOTAL ) ? vs_end_raw - 9'd264 : vs_end_raw;
 
 
 reg [8:0] v;

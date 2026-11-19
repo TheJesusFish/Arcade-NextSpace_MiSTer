@@ -1,8 +1,9 @@
 <misterromdescription>
     <name>The Next Space (Set 2)</name>
     <setname>tnextspc2</setname>
-    <rbf>NextSpace</rbf>
-    <mameversion>0250</mameversion>
+    <parent>tnextspc</parent>
+    <rbf>NextSpaceMD</rbf>
+    <mameversion>0288</mameversion>
     <year>1989</year>
     <manufacturer>SNK</manufacturer>
     <players>2</players>
@@ -10,23 +11,25 @@
     <rotation>vertical (cw)</rotation>
     <region>World</region>
 
-    <switches default="ff,ff">
+    <switches default="bf,ff">
         <!-- DSW1 -->
-        <dip name="Display" bits="0" ids="Inverse,Normal"/>
-        <dip name="Extend Availability" bits="2" ids="Every,Second"/>
-        <dip name="Coin 1/2" bits="4,5" ids="A 4C/1C B 1C/6C,A 3C/1C B 1C/5C,A 2C/1C B 1C/3C,A 1C/1C B 1C/2C"/>
-        <dip name="Hero" bits="6,7" ids="5,4,3,2"/>
-
+        <dip name="Flip Screen" bits="0" ids="Off,On" values="1,0"/>
+        <dip name="Unused" bits="1" ids="Off,On" values="1,0"/>
+        <dip name="Add'l Bonus" bits="2" ids="2nd Extend ONLY,Every Extend" values="1,0"/>
+        <dip name="Unused" bits="3" ids="Off,On" values="1,0"/>
+        <dip name="Coinage" bits="4,5" ids="A 1C/1C B 1C/2C,A 2C/1C B 1C/3C,A 3C/1C B 1C/5C,A 4C/1C B 1C/6C" values="3,2,1,0"/>
+        <dip name="Lives" bits="6,7" ids="2,3,4,5" values="3,2,1,0"/>
         <!-- DSW2 -->
-        <dip name="Level" bits="8,9" ids="Hardest(4),Hard(3),Easy(1),Normal(2)"/>
-        <dip name="Demo Sound" bits="10" ids="Off(Freeze),On(Inf. Lives)"/>
-        <dip name="Enable Cheat" bits="11" ids="Game Mode,Demo Sound"/>
-        <dip name="Extend" bits="12,13" ids="No Bonus,300k/500k,150k/300k,100k/200k"/>
-        <dip name="Continue" bits="14" ids="No,Yes"/>
-        <dip name="Service Mode" bits="15" ids="On,Off"/>
+        <dip name="Difficulty" bits="8,9" ids="Easy,Normal,Hard,Hardest" values="2,3,1,0"/>
+        <dip name="Demo Sounds" bits="10" ids="Off,On" values="0,1"/>
+        <dip name="Game Mode" bits="10" ids="Freeze,Inf Lives (Cheat)" values="0,1"/>
+        <dip name="SW2:3 Function" bits="11" ids="Demo Sounds,Game Mode" values="1,0"/>
+        <dip name="Bonus Life" bits="12,13" ids="100000 200000,150000 300000,300000 500000,None" values="3,2,1,0"/>
+        <dip name="Allow Continue" bits="14" ids="No,Yes" values="0,1"/>
+        <dip name="Service Mode" bits="15" ids="Off,On" values="1,0"/>
     </switches>
 
-    <buttons names="Shot,Item Shot,-,P1 Start,P2 Start,Coin A,Coin B,Pause" default="A,B,X,Y,R,L,Start"/>
+    <buttons names="Shot,Item Shot,Start,Coin,Pause,Save States" default="A,B,Start,Select,R,L"/>
 
     <rom index="0" zip="tnextspc2.zip|tnextspc.zip" md5="None">
         <!-- maincpu - starts at 0x0 -->
@@ -75,4 +78,13 @@
 
         <!-- Total 0x118B00 bytes - 1122 kBytes -->
     </rom>
+
+    <!-- hiscore: address[4] length[2] start end, MAME 0.288 plugins/hiscore/hiscore.dat -->
+    <rom index="3" md5="none">
+        <part>
+            00 07 2B 40 00 4F 00 4B
+            00 07 00 16 00 04 00 00
+        </part>
+    </rom>
+    <nvram index="4" size="83"/>
 </misterromdescription>

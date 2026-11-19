@@ -1,7 +1,7 @@
 
-# SNK68000 The Next Space FPGA Implementation
+# SNK68000 The Next Space FPGA Implementation — NextSpaceMD
 
-FPGA compatible core of SNK's The Next Space (A8004 based) arcade hardware for [**MiSTerFPGA**](https://github.com/MiSTer-devel/Main_MiSTer/wiki) written by **Erin Olafson** and verified against and authentic The Next Space (A8004-1) PCB purchased by [**atrac17**](https://github.com/atrac17).
+FPGA compatible core of SNK's The Next Space (A8004 based) arcade hardware for [**MiSTerFPGA**](https://github.com/MiSTer-devel/Main_MiSTer/wiki) written by **Erin Olafson** and verified against and authentic The Next Space (A8004-1) PCB purchased by [**atrac17**](https://github.com/atrac17). Maintenance and miscellaneous quality of life features (NextSpaceMD) added by TheJesusfish.
 
 The intent is for this core to be a 1:1 playable implementation of The Next Space (A8004-1) arcade hardware. Currently in **beta state**, this core is in active development with assistance from [**atrac17**](https://github.com/atrac17).
 
@@ -12,19 +12,25 @@ The intent is for this core to be a 1:1 playable implementation of The Next Spac
 
 ## Supported Games
 
-| Title | PCB<br>Number | Status  | Released |
-|-------|---------------|---------|----------|
-| [**The Next Space**](https://en.wikipedia.org/wiki/Gang_Wars_(video_game)) | A8004-1 (TNS)      | Implemented | **Yes** |
-| [**Paddle Mania**](https://snk.fandom.com/wiki/Super_Champion_Baseball)    | ALPHA68K-96-I (PM) | Implemented | **Yes** |
+| Title | PCB<br>Number | Status  | Released | MAME 0.288 sets |
+|-------|---------------|---------|----------|-----------------|
+| [**The Next Space**](https://snk.fandom.com/wiki/The_Next_Space) | A8004-1 (TNS)      | Implemented | **Yes** | **tnextspc, tnextspc2, tnextspcj** |
+| [**Paddle Mania**](https://snk.fandom.com/wiki/Paddle_Mania)     | ALPHA68K-96-I (PM) | Implemented | **Yes** | **paddlema** |
+
+Not supported: the Alpha 68k N board games (Super Stingray, Kyros / Kyros no Yakata, Mahjong Block Jongbou, Jongbou 2) use different graphics, sound and MCU hardware.
 
 ## External Modules
 
 |Name| Purpose | Author |
 |----|---------|--------|
-| [**fx68k**](https://github.com/ijor/fx68k)                      | [**Motorola 68000 CPU**](https://en.wikipedia.org/wiki/Motorola_68000) | Jorge Cwik     |
-| [**t80**](https://opencores.org/projects/t80)                   | [**Zilog Z80 CPU**](https://en.wikipedia.org/wiki/Zilog_Z80)           | Daniel Wallner |
-| [**jtopl2**](https://github.com/jotego/jtopl)                   | [**Yamaha OPL 2**](https://en.wikipedia.org/wiki/Yamaha_OPL#OPL2)      | Jose Tejada    |
-| [**yc_out**](https://github.com/MikeS11/MiSTerFPGA_YC_Encoder)  | [**Y/C Video Module**](https://en.wikipedia.org/wiki/S-Video)          | Mike Simone    |
+| [**fx68k**](https://github.com/ijor/fx68k) @ `0602ee4`                                                         | [**Motorola 68000 CPU**](https://en.wikipedia.org/wiki/Motorola_68000) | Jorge Cwik |
+| [**T80**](https://github.com/MiSTer-devel/NeoGeo_MiSTer/tree/master/rtl/cpu/T80) (NeoGeo_MiSTer `rtl/cpu/T80` @ `90a8350`) | [**Zilog Z80 CPU**](https://en.wikipedia.org/wiki/Zilog_Z80) | Daniel Wallner / MikeJ / Sorgelig |
+| [**jtopl**](https://github.com/jotego/jtopl) @ `f96ff3e`                                                      | [**Yamaha OPL 2**](https://en.wikipedia.org/wiki/Yamaha_OPL#OPL2)      | Jose Tejada |
+| [**Template_MiSTer sys/**](https://github.com/MiSTer-devel/Template_MiSTer) @ `e901a9f` (incl. yc_out)        | MiSTer framework                                                       | MiSTer-devel |
+| [**Arcade-TaitoF2_MiSTer**](https://github.com/MiSTer-devel/Arcade-TaitoF2_MiSTer) @ `9438df9` save-state code (`rtl/savestate/`: ddram, memory_stream, savestates, savestate_ui) | Save states | Martin Donlon |
+| [**Pause_MiSTer**](https://github.com/JimmyStones/Pause_MiSTer) (`rtl/pause.v`, va7deo modified)              | Pause handling                                                          | Jim Gregory |
+
+The save-state controller (`rtl/nextspace_ss.sv`) follows the TaitoF2 design; the high-score keeper (`rtl/hiscore.sv`) follows the Arcade-RaizingMD_MiSTer / Arcade-IGSPGM_MiSTer NVRAM flow and uses MAME's `hiscore.dat`.
 
 # Known Issues / Tasks
 
@@ -84,6 +90,28 @@ INPUT 87 | 68K-96-1 (PM) | [**ALPHA-INPUT 87**](https://github.com/va7deo/alpha6
 
 - There are two H/V toggles, H/V-sync positioning adjust and H/V-sync width adjust. Positioning will move the display for centering on CRT display. The sync width adjust can be used to for sync issues (rolling) without modifying the video timings.
 
+- Every position and width value (-8 to +7) keeps exactly one sync pulse per line and per frame; negative values move the pulse earlier / make it shorter, and the V-sync pulse is at least one line long.
+
+### Orientation
+
+- Both games are vertical and start rotated on HDMI (Video Settings, Orientation: Vert). Orientation: Horz outputs the original horizontal raster. The analog output is always the original raster.
+
+- The Next Space's Flip Screen DIP turns the picture by 180 degrees in the core's own raster, so it works on the analog and HDMI outputs.
+
+### Save States
+
+- Four save-state slots. On the controller: hold **L**, then **Down** saves, **Up** restores, **Left / Right** changes the slot. On the keyboard: **Alt+F1** saves, **F1** restores the selected slot. The OSD has Savestate Slot, Autoincrement Slot, Save state and Restore state.
+
+### High Scores
+
+- High scores are kept with MAME's `hiscore.dat` entries. With **Autosave Hiscores** On (default) the table is saved to `config/nvram` whenever the OSD is opened; **Save Hiscores** saves it at once. The saved table is restored once the game has set up its own table.
+
+### DIP Switches
+
+- DIP switches follow MAME 0.288 (names shortened only where an OSD row would overflow). Changing a DIP in the OSD does not reset the game; it applies at **Reset to apply** (or any reset).
+
+- The Next Space: switch SW2:3 is shared. **SW2:3 Function** (SW2:4) selects what it does: **Demo Sounds** (Off / On) or **Game Mode** (Freeze / Inf Lives (Cheat)). Only the row that matches the selected function has an effect.
+
 ### Scandoubler Options
 
 - Additional toggle to enable the scandoubler without changing ini settings and new scanline option for 100% is available, this draws a black line every other frame. Below is an example.
@@ -95,6 +123,19 @@ INPUT 87 | 68K-96-1 (PM) | [**ALPHA-INPUT 87**](https://github.com/va7deo/alpha6
 - The service menu is accessed by toggling a dipswitch for supported titles. Paddle Mania has a test switch that can be toggled with F2, it does not enter the test menu and toggling the dipswitch is required.
 
 - Paddle Mania supports co-op two player, two player versus the CPU opponents or a third and up to four player versus. 1P Start is referenced as the "A" button, 2P Start is "B" button. These are referenced in Paddle Mania's test menu.
+
+- Each controller drives its own player: controller 1 Start / Coin = 1P Start / Coin A, controller 2 Start / Coin = 2P Start / Coin B, and all player 2 controls come from controller 2. Paddle Mania players 3 and 4 use controllers 3 and 4 (the board has no player 3 / 4 start or coin).
+
+- Default controller buttons (button names from the games' instruction cards):
+
+|Game|A|B|Start|Select|R|L|
+|--|--|--|--|--|--|--|
+|The Next Space|Shot|Item Shot|Start|Coin|Pause|Save States|
+|Paddle Mania|Left Swing|Right Swing|Start|Coin|Pause|Save States|
+
+- Neither game uses button combinations in play. Paddle Mania's I/O test (service menu) exits with **A + B**.
+
+- Saved button maps from the original core (NextSpace) or with other bit layouts must be redefined (OSD Define Buttons).
 
 <br>
 
