@@ -4,12 +4,16 @@ import system_consts::*;
 module nextspace_ss (
     input              clk,
     input              reset,
-    input              ce_18m,
+    input              ce_m68k_half,
     input              clk_4m,
 
     input              do_save,
     input              do_restore,
     input        [1:0] slot,
+
+    output reg   [1:0] op_slot,
+    output reg         saved,
+    output reg         load_empty,
 
     output             active,
     output reg         run68,
@@ -77,8 +81,23 @@ localparam int SS_Z80   = 5;
 localparam int SS_MISC  = 6;
 localparam int SS_OPL   = 7;
 
+// chunk element counts and log2 element bytes
+localparam int N_SSP   = 1,    W_SSP   = 3;
+localparam int N_WRAM  = 8192, W_WRAM  = 1;
+localparam int N_SPR   = 8192, W_SPR   = 1;
+localparam int N_ZRAM  = 2048, W_ZRAM  = 0;
+localparam int N_ZRAM2 = 1024, W_ZRAM2 = 0;
+localparam int N_Z80   = 4,    W_Z80   = 3;
+localparam int N_MISC  = 1,    W_MISC  = 3;
+localparam int N_OPL   = 264,  W_OPL   = 0;
+
+// save length in 32-bit words: 8 chunk headers, chunk data, end marker
+localparam int SS_LEN = (8 * 8 + (N_SSP << W_SSP) + (N_WRAM << W_WRAM) + (N_SPR << W_SPR) + (N_ZRAM << W_ZRAM)
+                       + (N_ZRAM2 << W_ZRAM2) + (N_Z80 << W_Z80) + (N_MISC << W_MISC) + (N_OPL << W_OPL) + 8) / 4;
+
 typedef enum logic [3:0] {
     ST_IDLE,
+    ST_LOAD_CHECK,
     ST_SAVE_Z80,
     ST_SAVE_IRQ,
     ST_SAVE_SSP,
@@ -92,13 +111,33 @@ typedef enum logic [3:0] {
 } st_t;
 
 st_t st = ST_IDLE;
-assign active = st != ST_IDLE;
+// the slot check runs alongside the game
+assign active = (st != ST_IDLE) & (st != ST_LOAD_CHECK);
 
 reg         ss_write = 0;
 reg         ss_read = 0;
 wire        ss_busy;
 reg  [31:0] ssp_saved;
 reg  [31:0] ssp_restore;
+
+// DDR3: slot check reads, otherwise the save-state stream
+ddr_if ddr_chk(), ddr_stream();
+
+ddr_mux ddr_chk_mux (
+    .clk,
+    .x(ddr),
+    .a(ddr_chk),
+    .b(ddr_stream)
+);
+
+assign ddr_chk.write      = 1'b0;
+assign ddr_chk.wdata      = 64'd0;
+assign ddr_chk.burstcnt   = 8'd1;
+assign ddr_chk.byteenable = 8'hff;
+
+wire [31:0] slot_base = SS_DDR_BASE + { 8'd0, op_slot, 22'd0 };
+reg   [1:0] chk_ph;
+reg         chk_len_ok;
 
 // save-state stream to DDR3 and its chunk bus
 ssbus_if ssbus();
@@ -113,10 +152,10 @@ ssbus_mux #(.COUNT(8)) ssmux (
 save_state_data save_state_data (
     .clk,
     .reset,
-    .ddr,
+    .ddr(ddr_stream),
     .read_start(ss_read),
     .write_start(ss_write),
-    .index(slot),
+    .index(op_slot),
     .busy(ss_busy),
     .ssbus(ssbus)
 );
@@ -176,6 +215,8 @@ reg   [7:0] opl_sh_q;
 always_ff @(posedge clk) begin
     m1_l <= z80_m1_n;
     misc_load <= 0;
+    saved <= 0;
+    load_empty <= 0;
     if (opl_req & clk_4m) opl_req <= 0;
 
     if (reset) begin
@@ -189,6 +230,8 @@ always_ff @(posedge clk) begin
         ss_write <= 0;
         ss_read <= 0;
         opl_req <= 0;
+        ddr_chk.acquire <= 0;
+        ddr_chk.read <= 0;
     end else begin
         case (st)
             ST_IDLE: begin
@@ -199,13 +242,59 @@ always_ff @(posedge clk) begin
                 reset_z80 <= 0;
                 dirset <= 0;
                 tmo <= 0;
+                ddr_chk.acquire <= 0;
+                ddr_chk.read <= 0;
                 if (do_save) begin
+                    op_slot <= slot;
                     st <= ST_SAVE_Z80;
                 end else if (do_restore) begin
-                    hold_z80 <= 1;
-                    reset_z80 <= 1;
-                    ss_read <= 1;
-                    st <= ST_LOAD_READ;
+                    op_slot <= slot;
+                    chk_ph <= 0;
+                    ddr_chk.acquire <= 1;
+                    st <= ST_LOAD_CHECK;
+                end
+            end
+
+            // slot header and end marker must match a complete save before the game is stopped
+            ST_LOAD_CHECK: begin
+                tmo <= tmo + 1'd1;
+                case (chk_ph)
+                    2'd0: if (~ddr_chk.busy) begin
+                        ddr_chk.read <= 1;
+                        ddr_chk.addr <= slot_base;
+                        chk_ph <= 2'd1;
+                    end
+                    2'd1: begin
+                        if (~ddr_chk.busy) ddr_chk.read <= 0;
+                        if (ddr_chk.rdata_ready & ~ddr_chk.read) begin
+                            chk_len_ok <= ddr_chk.rdata[63:32] == SS_LEN;
+                            chk_ph <= 2'd2;
+                        end
+                    end
+                    2'd2: if (~ddr_chk.busy) begin
+                        ddr_chk.read <= 1;
+                        ddr_chk.addr <= slot_base + SS_LEN * 4;
+                        chk_ph <= 2'd3;
+                    end
+                    2'd3: begin
+                        if (~ddr_chk.busy) ddr_chk.read <= 0;
+                        if (ddr_chk.rdata_ready & ~ddr_chk.read) begin
+                            ddr_chk.acquire <= 0;
+                            if (chk_len_ok & (&ddr_chk.rdata)) begin
+                                hold_z80 <= 1;
+                                reset_z80 <= 1;
+                                ss_read <= 1;
+                                st <= ST_LOAD_READ;
+                            end else begin
+                                load_empty <= 1;
+                                st <= ST_IDLE;
+                            end
+                        end
+                    end
+                endcase
+                if (&tmo) begin
+                    load_empty <= 1;
+                    st <= ST_IDLE;
                 end
             end
 
@@ -259,6 +348,7 @@ always_ff @(posedge clk) begin
                 if (game_fetch) begin
                     run68 <= 0;
                     hold_z80 <= 0;
+                    saved <= 1;
                     st <= ST_IDLE;
                 end
             end
@@ -326,7 +416,7 @@ always_ff @(posedge clk) begin
 
             // 68000 reset with the saved stack pointer and the handler as reset vectors
             ST_LOAD_RESET: begin
-                if (ce_18m) begin
+                if (ce_m68k_half) begin
                     rst_cnt <= rst_cnt + 1'd1;
                     if (&rst_cnt) begin
                         reset68 <= 0;
@@ -351,7 +441,7 @@ end
 
 // chunk 0: supervisor stack pointer (one 64-bit element: every chunk ends on a 64-bit word)
 always_ff @(posedge clk) begin
-    ssb[SS_SSP].setup(SS_SSP, 1, 3);
+    ssb[SS_SSP].setup(SS_SSP, N_SSP, W_SSP);
     if (ssb[SS_SSP].access(SS_SSP)) begin
         if (ssb[SS_SSP].write) begin
             ssp_restore <= ssb[SS_SSP].data[31:0];
@@ -370,7 +460,7 @@ assign wram_we   = wram_en & ssb[SS_WRAM].write;
 
 reg wram_rd_dly;
 always_ff @(posedge clk) begin
-    ssb[SS_WRAM].setup(SS_WRAM, 8192, 1);
+    ssb[SS_WRAM].setup(SS_WRAM, N_WRAM, W_WRAM);
     if (ssb[SS_WRAM].access(SS_WRAM)) begin
         if (ssb[SS_WRAM].write) begin
             ssb[SS_WRAM].write_ack(SS_WRAM);
@@ -391,7 +481,7 @@ assign spr_we   = spr_en & ssb[SS_SPR].write;
 
 reg spr_rd_dly;
 always_ff @(posedge clk) begin
-    ssb[SS_SPR].setup(SS_SPR, 8192, 1);
+    ssb[SS_SPR].setup(SS_SPR, N_SPR, W_SPR);
     if (ssb[SS_SPR].access(SS_SPR)) begin
         if (ssb[SS_SPR].write) begin
             ssb[SS_SPR].write_ack(SS_SPR);
@@ -411,7 +501,7 @@ assign zram_we   = ssb[SS_ZRAM].access(SS_ZRAM) & ssb[SS_ZRAM].write;
 
 reg zram_rd_dly;
 always_ff @(posedge clk) begin
-    ssb[SS_ZRAM].setup(SS_ZRAM, 2048, 0);
+    ssb[SS_ZRAM].setup(SS_ZRAM, N_ZRAM, W_ZRAM);
     if (ssb[SS_ZRAM].access(SS_ZRAM)) begin
         if (ssb[SS_ZRAM].write) begin
             ssb[SS_ZRAM].write_ack(SS_ZRAM);
@@ -431,7 +521,7 @@ assign zram2_we   = ssb[SS_ZRAM2].access(SS_ZRAM2) & ssb[SS_ZRAM2].write;
 
 reg zram2_rd_dly;
 always_ff @(posedge clk) begin
-    ssb[SS_ZRAM2].setup(SS_ZRAM2, 1024, 0);
+    ssb[SS_ZRAM2].setup(SS_ZRAM2, N_ZRAM2, W_ZRAM2);
     if (ssb[SS_ZRAM2].access(SS_ZRAM2)) begin
         if (ssb[SS_ZRAM2].write) begin
             ssb[SS_ZRAM2].write_ack(SS_ZRAM2);
@@ -447,7 +537,7 @@ end
 // chunk 5: T80 registers (212 bits in 4 x 64)
 wire [255:0] z80_reg_w = {44'd0, z80_reg};
 always_ff @(posedge clk) begin
-    ssb[SS_Z80].setup(SS_Z80, 4, 3);
+    ssb[SS_Z80].setup(SS_Z80, N_Z80, W_Z80);
     if (ssb[SS_Z80].access(SS_Z80)) begin
         if (ssb[SS_Z80].write) begin
             case (ssb[SS_Z80].addr[1:0])
@@ -465,7 +555,7 @@ end
 
 // chunk 6: board registers
 always_ff @(posedge clk) begin
-    ssb[SS_MISC].setup(SS_MISC, 1, 3);
+    ssb[SS_MISC].setup(SS_MISC, N_MISC, W_MISC);
     if (ssb[SS_MISC].access(SS_MISC)) begin
         if (ssb[SS_MISC].write) begin
             misc_out <= ssb[SS_MISC].data;
@@ -492,7 +582,7 @@ reg opl_rd_dly;
 always_ff @(posedge clk) begin
     if (~active & clk_4m & opl_wr & ~opl_a0) opl_sel <= opl_d;
 
-    ssb[SS_OPL].setup(SS_OPL, 264, 0);
+    ssb[SS_OPL].setup(SS_OPL, N_OPL, W_OPL);
     if (opl_ss_acc) begin
         if (ssb[SS_OPL].write) begin
             if (ssb[SS_OPL].addr[8:0] == 9'h100) opl_sel <= ssb[SS_OPL].data[7:0];

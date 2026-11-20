@@ -117,7 +117,8 @@ localparam CONF_STR = {
     "Save to state 3,",
     "Restore state 3,",
     "Save to state 4,",
-    "Restore state 4;",
+    "Restore state 4,",
+    "No save in this slot;",
     "v,1;",
     "V,v",`BUILD_DATE
 };
@@ -380,7 +381,7 @@ end
 wire pll_locked;
 
 wire clk_sys;
-reg  clk_4M,clk_6M,clk_18M;
+reg  clk_4M,clk_6M,m68k_half;
 
 wire clk_72M;
 
@@ -397,45 +398,56 @@ assign    SDRAM_CLK = clk_72M;
 
 localparam  CLKSYS=72;
 
-reg [15:0] clk18_count;
+reg [15:0] m68k_half_cnt;
 reg  [5:0] clk6_count;
 reg  [7:0] clk4_count;
 
+// 68000 half-cycle divider end count: The Next Space 72/4 = 18 MHz (9 MHz 68000), Paddle Mania 72/6 = 12 MHz (6 MHz 68000)
+localparam [3:0] M68K_HALF_LAST_NEXTSPACE   = 4'd3;
+localparam [3:0] M68K_HALF_LAST_PADDLEMANIA = 4'd5;
+wire [3:0] m68k_half_last = ( pcb == NEXTSPACE ) ? M68K_HALF_LAST_NEXTSPACE : M68K_HALF_LAST_PADDLEMANIA;
+
+// PLL lock in the clk_sys domain: the dividers and the raster start from zero when it rises
+wire sys_locked;
+
+bit_sync lock_sync (
+    .clk(clk_sys),
+    .d(pll_locked),
+    .q(sys_locked)
+);
+
 // CPU clocks run unless paused; a save-state sequence takes over the 68000 clock and keeps the Z80 clock running
-wire run_18m = ss_active ? ss_run68 : ~pause_cpu;
-wire run_4m  = ss_active | ~pause_cpu;
+wire run_m68k = ss_active ? ss_run68 : ~pause_cpu;
+wire run_4m   = ss_active | ~pause_cpu;
 
 always @ (posedge clk_sys) begin
 
     clk_4M <= ( clk4_count == 0 );
-    if ( clk4_count == 17 ) begin 
+    if ( ~sys_locked || clk4_count == 17 ) begin
         clk4_count <= 0;
     end else if ( run_4m ) begin
         clk4_count <= clk4_count + 1;
     end
-    
+
     clk_6M <= ( clk6_count == 0 );
-    if ( clk6_count == 11 ) begin 
+    if ( ~sys_locked || clk6_count == 11 ) begin
         clk6_count <= 0;
     end else begin
         clk6_count <= clk6_count + 1;
     end
 
-    // 18MHZ
-    clk_18M <= ( clk18_count == 0 );
-    // the next space = 9MHz
-    // paddle mania = 6MHz
-    if ( clk18_count == ( pcb == 0 ? 3 : 5 ) ) begin 
-        clk18_count <= 0;
-    end else if ( run_18m ) begin
-        clk18_count <= clk18_count + 1;
+    m68k_half <= ( m68k_half_cnt == 0 );
+    if ( ~sys_locked || m68k_half_cnt == m68k_half_last ) begin
+        m68k_half_cnt <= 0;
+    end else if ( run_m68k ) begin
+        m68k_half_cnt <= m68k_half_cnt + 1;
     end
 end
 
-// enables on the clk_sys edge where clk_4M / clk_6M / clk_18M rise
-wire ce_4m  = ( clk4_count  == 0 ) & ~clk_4M;
-wire ce_6m  = ( clk6_count  == 0 ) & ~clk_6M;
-wire ce_18m = ( clk18_count == 0 ) & ~clk_18M;
+// enables on the clk_sys edge where clk_4M / clk_6M / m68k_half rise
+wire ce_4m        = ( clk4_count    == 0 ) & ~clk_4M;
+wire ce_6m        = ( clk6_count    == 0 ) & ~clk_6M;
+wire ce_m68k_half = ( m68k_half_cnt == 0 ) & ~m68k_half;
 
 wire    reset;
 assign  reset = RESET | key_reset | status[0] ;
@@ -469,6 +481,7 @@ end
 video_timing video_timing (
     .clk(clk_sys),
     .clk_pix(clk_6M),
+    .reset(~sys_locked),
     .pcb(pcb),
     .hc(hc),
     .vc(vc),
@@ -609,15 +622,20 @@ wire  [63:0] ss_misc_out;
 wire         ss_misc_load;
 wire         ss_opl_req, ss_opl_req_a0;
 wire   [7:0] ss_opl_req_d;
+wire   [1:0] ss_op_slot;
+wire         ss_saved, ss_load_empty;
 
 nextspace_ss nextspace_ss (
     .clk(clk_sys),
     .reset(reset),
-    .ce_18m(ce_18m),
+    .ce_m68k_half(ce_m68k_half),
     .clk_4m(clk_4M),
     .do_save(ss_save),
     .do_restore(ss_load),
     .slot(ss_slot),
+    .op_slot(ss_op_slot),
+    .saved(ss_saved),
+    .load_empty(ss_load_empty),
     .active(ss_active),
     .run68(ss_run68),
     .irq7(ss_irq7),
@@ -667,11 +685,41 @@ nextspace_ss nextspace_ss (
     .ddr(ddr_ss)
 );
 
-// save-state keyboard: F1 restore / Alt-F1 save on the selected slot (F2-F4 are core keys)
+// savestate_ui key code that selects slot n (F1-F4)
+function [7:0] ss_fkey(input [1:0] n);
+    case (n)
+        2'd0:    ss_fkey = 8'h05;
+        2'd1:    ss_fkey = 8'h06;
+        2'd2:    ss_fkey = 8'h04;
+        default: ss_fkey = 8'h0C;
+    endcase
+endfunction
+
+// save-state keys: F1 restore / Alt-F1 save act on the selected slot; Autoincrement selects the next slot after a completed save
 reg [10:0] ss_ps2_key;
+reg        ss_key_tog;
+reg        ss_adv;
+reg  [1:0] ss_adv_slot;
 always @(posedge clk_sys) begin
-    if ( ps2_key[7:0] == 8'h05 || ps2_key[8:0] == 9'h011 || ps2_key[8:0] == 9'h111 ) ss_ps2_key <= ps2_key;
+    ss_key_tog <= ps2_key[10];
+    if ( ps2_key[10] != ss_key_tog ) begin
+        if ( ps2_key[7:0] == 8'h05 ) ss_ps2_key <= { ~ss_ps2_key[10], ps2_key[9:8], ss_fkey(ss_slot) };
+        else if ( ps2_key[8:0] == 9'h011 || ps2_key[8:0] == 9'h111 ) ss_ps2_key <= { ~ss_ps2_key[10], ps2_key[9:0] };
+    end else if ( ss_adv ) begin
+        ss_adv <= 0;
+        ss_ps2_key <= { ~ss_ps2_key[10], 2'b00, ss_fkey(ss_adv_slot) };
+    end
+    if ( ss_saved & status[66] ) begin
+        ss_adv <= 1;
+        ss_adv_slot <= ss_op_slot + 1'd1;
+    end
 end
+
+// info 14 (no save in the slot) replaces the restore message
+wire       ss_ui_info_req;
+wire [7:0] ss_ui_info;
+assign ss_info_req = ss_ui_info_req | ss_load_empty;
+assign ss_info     = ss_load_empty ? 8'd14 : ss_ui_info;
 
 savestate_ui #(.INFO_TIMEOUT_BITS(25)) savestate_ui (
     .clk(clk_sys),
@@ -686,12 +734,12 @@ savestate_ui #(.INFO_TIMEOUT_BITS(25)) savestate_ui (
     .joyRewind(1'b0),
     .rewindEnable(1'b0),
     .status_slot(status[65:64]),
-    .autoincslot(status[66]),
+    .autoincslot(1'b0),
     .OSD_saveload(status[68:67]),
     .ss_save(ss_save),
     .ss_load(ss_load),
-    .ss_info_req(ss_info_req),
-    .ss_info(ss_info),
+    .ss_info_req(ss_ui_info_req),
+    .ss_info(ss_ui_info),
     .statusUpdate(ss_status_set),
     .selected_slot(ss_slot)
 );
@@ -976,7 +1024,7 @@ always @ (posedge clk_sys) begin
             m68k_ipl0_n <= 0;
         end 
 
-        if ( clk_18M == 1 ) begin
+        if ( m68k_half == 1 ) begin
             // cpu acknowledged the interrupt
             // TODO - this should be enable lines set by reading memory locations d8000 & e0000
             if ( ( m68k_as_n == 0 ) && ( m68k_fc == 3'b111 ) && !ss_active ) begin
@@ -1228,13 +1276,13 @@ reg sp_enable;
 reg fx68_phi1;
 
 always @(posedge clk_sys) begin
-    if ( clk_18M == 1 ) begin
+    if ( m68k_half == 1 ) begin
         fx68_phi1 <= ~fx68_phi1;
     end
 end
 
 // reset reaches the 68000 on its enabled edges only
-wire m68k_reset_ce = ( reset | ss_reset68 ) & ce_18m;
+wire m68k_reset_ce = ( reset | ss_reset68 ) & ce_m68k_half;
 
 // IPL0 as the 68000 samples it: the register's value after this clk_sys edge
 wire m68k_ipl0_cpu = m68k_ipl0_n & ~( vbl_sr == 2'b01 );
@@ -1243,8 +1291,8 @@ fx68k fx68k (
     // input
     .clk( clk_sys ),
     .HALTn(1'b1),
-    .enPhi1(ce_18m & fx68_phi1),
-    .enPhi2(ce_18m & ~fx68_phi1),
+    .enPhi1(ce_m68k_half & fx68_phi1),
+    .enPhi2(ce_m68k_half & ~fx68_phi1),
 
     .extReset(m68k_reset_ce),
     .pwrUp(m68k_reset_ce),
@@ -1363,7 +1411,7 @@ wire [15:0] wram_b_q;
 dual_port_ram #(.LEN(8192)) ram8kx8_H (
     .clock_a ( clk_sys ),
     .address_a ( m68k_a[13:1] ),
-    .wren_a ( !m68k_rw & m68k_ram_cs & !m68k_uds_n & ce_18m ),
+    .wren_a ( !m68k_rw & m68k_ram_cs & !m68k_uds_n & ce_m68k_half ),
     .data_a ( m68k_dout[15:8]  ),
     .q_a (  m68k_ram_dout[15:8] ),
 
@@ -1378,7 +1426,7 @@ dual_port_ram #(.LEN(8192)) ram8kx8_H (
 dual_port_ram #(.LEN(8192)) ram8kx8_L (
     .clock_a ( clk_sys ),
     .address_a ( m68k_a[13:1] ),
-    .wren_a ( !m68k_rw & m68k_ram_cs & !m68k_lds_n & ce_18m ),
+    .wren_a ( !m68k_rw & m68k_ram_cs & !m68k_lds_n & ce_m68k_half ),
     .data_a ( m68k_dout[7:0]  ),
     .q_a ( m68k_ram_dout[7:0] ),
 
@@ -1395,8 +1443,8 @@ wire [15:0] sprite_ram_dout /* synthesis keep */;
 // sprite RAM port A: the 68000, or save states while the 68000 is held
 wire [13:0] spr_a_addr = ss_spr_en ? { 1'b0, ss_spr_addr } : m68k_a[14:1];
 wire [15:0] spr_a_d    = ss_spr_en ? ss_spr_d : m68k_dout;
-wire        spr_a_we_h = ss_spr_en ? ss_spr_we : ( !m68k_rw & m68k_spr_cs & !m68k_uds_n & ce_18m );
-wire        spr_a_we_l = ss_spr_en ? ss_spr_we : ( !m68k_rw & m68k_spr_cs & !m68k_lds_n & ce_18m );
+wire        spr_a_we_h = ss_spr_en ? ss_spr_we : ( !m68k_rw & m68k_spr_cs & !m68k_uds_n & ce_m68k_half );
+wire        spr_a_we_l = ss_spr_en ? ss_spr_we : ( !m68k_rw & m68k_spr_cs & !m68k_lds_n & ce_m68k_half );
 
 // main 68k sprite ram high  
 // 2kx16

@@ -3,6 +3,7 @@ set_global_assignment -name SDC_FILE Arcade-NextSpaceMD.sdc
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/savestate/system_consts.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/nextspace_ss.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/hiscore.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/bit_sync.sv
 set_global_assignment -name SYSTEMVERILOG_FILE Arcade-NextSpaceMD.sv
 set_global_assignment -name VERILOG_FILE rtl/chip_select.v
 set_global_assignment -name VERILOG_FILE rtl/video_timing.v

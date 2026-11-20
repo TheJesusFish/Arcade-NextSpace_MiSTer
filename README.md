@@ -102,6 +102,10 @@ INPUT 87 | 68K-96-1 (PM) | [**ALPHA-INPUT 87**](https://github.com/va7deo/alpha6
 
 - Four save-state slots. On the controller: hold **L**, then **Down** saves, **Up** restores, **Left / Right** changes the slot. On the keyboard: **Alt+F1** saves, **F1** restores the selected slot. The OSD has Savestate Slot, Autoincrement Slot, Save state and Restore state.
 
+- A save always goes to the slot that was selected when it started. With **Autoincrement Slot** On, the next slot is selected once the save has finished.
+
+- Restoring a slot that holds no save (or an incomplete one) leaves the game running and shows "No save in this slot".
+
 ### High Scores
 
 - High scores are kept with MAME's `hiscore.dat` entries. With **Autosave Hiscores** On (default) the table is saved to `config/nvram` whenever the OSD is opened; **Save Hiscores** saves it at once. The saved table is restored once the game has set up its own table.
@@ -110,7 +114,7 @@ INPUT 87 | 68K-96-1 (PM) | [**ALPHA-INPUT 87**](https://github.com/va7deo/alpha6
 
 - DIP switches follow MAME 0.288 (names shortened only where an OSD row would overflow). Changing a DIP in the OSD does not reset the game; it applies at **Reset to apply** (or any reset).
 
-- The Next Space: switch SW2:3 is shared. **SW2:3 Function** (SW2:4) selects what it does: **Demo Sounds** (Off / On) or **Game Mode** (Freeze / Inf Lives (Cheat)). Only the row that matches the selected function has an effect.
+- The Next Space: switches SW2:3 and SW2:4 are one OSD entry, **Game Mode**, because SW2:4 selects what SW2:3 does. Its four settings are what the board does: **Demo Sounds Off**, **Demo Sounds On** (default), **Freeze** and **Inf Lives (Cheat)**.
 
 ### Scandoubler Options
 

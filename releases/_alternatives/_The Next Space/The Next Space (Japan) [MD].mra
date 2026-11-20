@@ -21,9 +21,7 @@
         <dip name="Lives" bits="6,7" ids="2,3,4,5" values="3,2,1,0"/>
         <!-- DSW2 -->
         <dip name="Difficulty" bits="8,9" ids="Easy,Normal,Hard,Hardest" values="2,3,1,0"/>
-        <dip name="Demo Sounds" bits="10" ids="Off,On" values="0,1"/>
-        <dip name="Game Mode" bits="10" ids="Freeze,Inf Lives (Cheat)" values="0,1"/>
-        <dip name="SW2:3 Function" bits="11" ids="Demo Sounds,Game Mode" values="1,0"/>
+        <dip name="Game Mode" bits="10,11" ids="Demo Sounds Off,Demo Sounds On,Freeze,Inf Lives (Cheat)" values="2,3,0,1"/>
         <dip name="Bonus Life" bits="12,13" ids="100000 200000,150000 300000,300000 500000,None" values="3,2,1,0"/>
         <dip name="Allow Continue" bits="14" ids="No,Yes" values="0,1"/>
         <dip name="Service Mode" bits="15" ids="Off,On" values="1,0"/>
