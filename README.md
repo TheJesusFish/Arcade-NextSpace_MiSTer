@@ -104,7 +104,7 @@ INPUT 87 | 68K-96-1 (PM) | [**ALPHA-INPUT 87**](https://github.com/va7deo/alpha6
 
 - A save always goes to the slot that was selected when it started. With **Autoincrement Slot** On, the next slot is selected once the save has finished.
 
-- Restoring a slot that holds no save (or an incomplete one) leaves the game running and shows "No save in this slot".
+- Restoring a slot that holds no save (or an incomplete one) leaves the game running and shows "No save in this slot". A save cut short by a reset leaves its slot empty until the next save; the slot's file on the SD card keeps the previous save.
 
 ### High Scores
 

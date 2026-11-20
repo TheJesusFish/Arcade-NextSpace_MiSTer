@@ -101,6 +101,7 @@ typedef enum logic [3:0] {
     ST_SAVE_Z80,
     ST_SAVE_IRQ,
     ST_SAVE_SSP,
+    ST_SAVE_INVAL,
     ST_SAVE_WRITE,
     ST_SAVE_EXIT,
     ST_LOAD_READ,
@@ -120,7 +121,7 @@ wire        ss_busy;
 reg  [31:0] ssp_saved;
 reg  [31:0] ssp_restore;
 
-// DDR3: slot check reads, otherwise the save-state stream
+// DDR3: slot header check and invalidation, otherwise the save-state stream
 ddr_if ddr_chk(), ddr_stream();
 
 ddr_mux ddr_chk_mux (
@@ -130,10 +131,10 @@ ddr_mux ddr_chk_mux (
     .b(ddr_stream)
 );
 
-assign ddr_chk.write      = 1'b0;
+// the only write clears the header's length word (upper half), keeping the change counter
 assign ddr_chk.wdata      = 64'd0;
 assign ddr_chk.burstcnt   = 8'd1;
-assign ddr_chk.byteenable = 8'hff;
+assign ddr_chk.byteenable = ddr_chk.write ? 8'hf0 : 8'hff;
 
 wire [31:0] slot_base = SS_DDR_BASE + { 8'd0, op_slot, 22'd0 };
 reg   [1:0] chk_ph;
@@ -177,7 +178,7 @@ logic [15:0] handler[16] = '{
 wire handler_hit = cpu_a[23:5] == 19'h1F800;
 wire vec7_hit    = cpu_a[23:2] == 22'h00001F;
 wire rstvec_hit  = cpu_a[23:3] == 21'h000000;
-wire save_side   = (st == ST_SAVE_IRQ) | (st == ST_SAVE_SSP) | (st == ST_SAVE_WRITE) | (st == ST_SAVE_EXIT);
+wire save_side   = (st == ST_SAVE_IRQ) | (st == ST_SAVE_SSP) | (st == ST_SAVE_INVAL) | (st == ST_SAVE_WRITE) | (st == ST_SAVE_EXIT);
 wire load_side   = (st == ST_LOAD_RESET) | (st == ST_LOAD_EXIT);
 
 assign ovr = ~cpu_as_n & cpu_rw & ((active & handler_hit) | (save_side & vec7_hit) | (load_side & rstvec_hit));
@@ -232,6 +233,7 @@ always_ff @(posedge clk) begin
         opl_req <= 0;
         ddr_chk.acquire <= 0;
         ddr_chk.read <= 0;
+        ddr_chk.write <= 0;
     end else begin
         case (st)
             ST_IDLE: begin
@@ -244,6 +246,7 @@ always_ff @(posedge clk) begin
                 tmo <= 0;
                 ddr_chk.acquire <= 0;
                 ddr_chk.read <= 0;
+                ddr_chk.write <= 0;
                 if (do_save) begin
                     op_slot <= slot;
                     st <= ST_SAVE_Z80;
@@ -329,6 +332,23 @@ always_ff @(posedge clk) begin
                 if (ssp_wr & cpu_a[1]) begin
                     ssp_saved[15:0] <= cpu_dout;
                     run68 <= 0;
+                    chk_ph <= 0;
+                    ddr_chk.acquire <= 1;
+                    st <= ST_SAVE_INVAL;
+                end
+            end
+
+            // slot marked empty (length 0) before it is overwritten; the stream's final header write marks it valid
+            ST_SAVE_INVAL: begin
+                if (chk_ph == 2'd0) begin
+                    if (~ddr_chk.busy) begin
+                        ddr_chk.write <= 1;
+                        ddr_chk.addr <= slot_base;
+                        chk_ph <= 2'd1;
+                    end
+                end else if (~ddr_chk.busy) begin
+                    ddr_chk.write <= 0;
+                    ddr_chk.acquire <= 0;
                     ss_write <= 1;
                     st <= ST_SAVE_WRITE;
                 end
